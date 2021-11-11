@@ -198,7 +198,6 @@ if __name__ == '__main__':
     # exit()
     currencies = api.currencies().get()
     exchangers = api.exchangers().get()
-    cities = api.cities().get()
 
     dir_from = 93
     dir_to = 42
@@ -206,4 +205,4 @@ if __name__ == '__main__':
     title = 'Exchange rates in the direction (https://www.bestchange.ru/index.php?from={}&to={}) {} : {}'
     print(title.format(dir_from, dir_to, api.currencies().get_by_id(dir_from), api.currencies().get_by_id(dir_to)))
     for val in rows[:3]:
-        print('{} ({}) {}'.format(exchangers[val['exchange_id']]['name'], cities[val['city_id']]['name'], val))
+        print('{} {}'.format(exchangers[val['exchange_id']]['name'], val))
