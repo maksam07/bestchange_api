@@ -4,6 +4,7 @@ from urllib.request import urlretrieve
 import os
 import platform
 import time
+from itertools import groupby
 
 
 def creation_date(path_to_file):
@@ -27,7 +28,7 @@ def creation_date(path_to_file):
 class Rates:
     __data = []
 
-    def __init__(self, text):
+    def __init__(self, text, split_reviews):
         for row in text.splitlines():
             val = row.split(';')
             try:
@@ -36,10 +37,8 @@ class Rates:
                     'get_id': int(val[1]),
                     'exchange_id': int(val[2]),
                     'rate': float(val[3]) / float(val[4]),
-                    # 'give': float(val[3]),
-                    # 'get': float(val[4]),
                     'reserve': float(val[5]),
-                    'reviews': val[6],
+                    'reviews': val[6].split('.') if split_reviews else val[6],
                     'min_sum': float(val[8]),
                     'max_sum': float(val[9]),
                     'city_id': int(val[10]),
@@ -47,6 +46,9 @@ class Rates:
             except ZeroDivisionError:
                 # Иногда бывает курс N:0 и появляется ошибка деления на 0.
                 pass
+
+    def get(self):
+        return self.__data
 
     def filter(self, give_id, get_id):
         data = []
@@ -87,7 +89,7 @@ class Currencies(Common):
                 'name': val[2],
             }
 
-        self.__data = dict(sorted(self.data.items(), key=lambda x: x[1]['name']))
+        self.data = dict(sorted(self.data.items(), key=lambda x: x[1]['name']))
 
 
 class Exchangers(Common):
@@ -98,9 +100,16 @@ class Exchangers(Common):
             self.data[int(val[0])] = {
                 'id': int(val[0]),
                 'name': val[1],
+                'wmbl': int(val[3]),
+                'reserve_sum': float(val[4]),
             }
 
-        self.__data = dict(sorted(self.data.items()))
+        self.data = dict(sorted(self.data.items()))
+
+    def extract_reviews(self, rates):
+        for k, v in groupby(sorted(rates, key=lambda x: x['exchange_id']), lambda x: x['exchange_id']):
+            if k in self.data.keys():
+                self.data[k]['reviews'] = list(v)[0]['reviews']
 
 
 class Cities(Common):
@@ -113,7 +122,7 @@ class Cities(Common):
                 'name': val[1],
             }
 
-        self.__data = dict(sorted(self.data.items(), key=lambda x: x[1]['name']))
+        self.data = dict(sorted(self.data.items(), key=lambda x: x[1]['name']))
 
 
 class BestChange:
@@ -132,7 +141,8 @@ class BestChange:
     __rates = None
     __cities = None
 
-    def __init__(self, load=True, cache=True, cache_seconds=15, cache_path='./'):
+    def __init__(self, load=True, cache=True, cache_seconds=15, cache_path='./', exchangers_reviews=False,
+                 split_reviews=False):
         """
         :param load: True (default). Загружать всю базу сразу
         :param cache: True (default). Использовать кеширование
@@ -141,10 +151,17 @@ class BestChange:
         В поддержке писали, что загружать архив можно не чаще раз в 30 секунд, но я не обнаружил никаких проблем,
         если загружать его чаще
         :param cache_path: './' (default). Папка хранения кешированных данных (zip-архива)
+        :param exchangers_reviews: False (default). Добавить в информация о обменниках количество отзывов. Работает
+        только с включенными обменниками и у которых минимум одно направление на BestChange.
+        :param split_reviews: False (default). По-умолчанию BestChange отдает отрицательные и положительные отзывы
+        одним значением через точку. Так как направлений обмена и обменок огромное количество, то это значение
+        по-умолчанию отключено, чтобы не вызывать лишнюю нагрузку
         """
         self.__cache = cache
         self.__cache_seconds = cache_seconds
         self.__cache_path = cache_path + self.__filename
+        self.__exchangers_reviews = exchangers_reviews
+        self.__split_reviews = split_reviews
         if load:
             self.load()
 
@@ -163,7 +180,7 @@ class BestChange:
 
             if self.__file_rates in files:
                 text = TextIOWrapper(zipfile.open(self.__file_rates), encoding=self.__enc).read()
-                self.__rates = Rates(text)
+                self.__rates = Rates(text, self.__split_reviews)
 
             if self.__file_currencies in files:
                 text = TextIOWrapper(zipfile.open(self.__file_currencies), encoding=self.__enc).read()
@@ -176,6 +193,9 @@ class BestChange:
             if self.__file_cities in files:
                 text = TextIOWrapper(zipfile.open(self.__file_cities), encoding=self.__enc).read()
                 self.__cities = Cities(text)
+
+            if self.__exchangers_reviews:
+                self.exchangers().extract_reviews(self.rates().get())
 
     def rates(self):
         return self.__rates
@@ -191,7 +211,7 @@ class BestChange:
 
 
 if __name__ == '__main__':
-    api = BestChange(cache_seconds=3600)
+    api = BestChange(cache_seconds=3600, exchangers_reviews=True, split_reviews=True)
 
     # print(api.exchangers().search_by_name('обмен'))
     # print(api.currencies().search_by_name('налич'))
