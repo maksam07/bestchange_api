@@ -30,6 +30,13 @@ for val in rows[:3]:
 
 ```
 
+
+Для обменных пунктов есть возможность сразу получить количество отзывов о них (работает, только если у обменника есть хоть одно направление на BestChange): 
+```python
+from bestchange_api import BestChange
+api = BestChange(exchangers_reviews=True)
+```
+
 Все методы, реализованные на данный момент:
 ```python
 from bestchange_api import BestChange
