@@ -1,6 +1,7 @@
 # BestChange API
 
 Библиотека для работы с "api" сервиса bestchange.ru предоставит Вам возможность получить:
+
 * курсы со всех направлений;
 * валюты;
 * обменные пункты;
@@ -8,14 +9,15 @@
 * а так же кеширование всех этих данных.
 
 Установка:
+
 ```console
 pip install bestchange-api
 ```
 
-Пример использования:  
+Пример использования:
+
 ```python
 from bestchange_api import BestChange
-
 
 api = BestChange()
 exchangers = api.exchangers().get()
@@ -30,17 +32,19 @@ for val in rows[:3]:
 
 ```
 
+Для обменных пунктов есть возможность сразу получить количество отзывов о них (работает, только если у обменника есть
+хоть одно направление на BestChange):
 
-Для обменных пунктов есть возможность сразу получить количество отзывов о них (работает, только если у обменника есть хоть одно направление на BestChange): 
 ```python
 from bestchange_api import BestChange
+
 api = BestChange(exchangers_reviews=True)
 ```
 
 Все методы, реализованные на данный момент:
+
 ```python
 from bestchange_api import BestChange
-
 
 api = BestChange(cache=True, cache_seconds=300, cache_path='/home/user/tmp/')
 api.currencies().get()  # Получить список всех валют
@@ -57,4 +61,8 @@ api.cities().search_by_name('text')  # Поиск городов по подст
 
 api.rates().filter(1, 2)  # Возвращает курсы, отфильтрованный и отсортированных по направлению 
 
+# Раздел "Популярное"
+currencies = api.currencies().get()
+for val in api.top().get():
+    print(currencies[val['give_id']]['name'], '->', currencies[val['get_id']]['name'], ':', round(val['perc'], 2))
 ```
