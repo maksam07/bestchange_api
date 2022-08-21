@@ -26,9 +26,8 @@ def creation_date(path_to_file):
 
 
 class Rates:
-    __data = []
-
     def __init__(self, text, split_reviews):
+        self.__data = []
         for row in text.splitlines():
             val = row.split(';')
             try:
@@ -125,6 +124,51 @@ class Cities(Common):
         self.data = dict(sorted(self.data.items(), key=lambda x: x[1]['name']))
 
 
+'''
+class Bcodes(Common):
+    def __init__(self, text):
+        super().__init__()
+        for row in text.splitlines():
+            val = row.split(';')
+            self.data[int(val[0])] = {
+                'id': int(val[0]),
+                'code': val[1],
+                'name': val[2],
+                'source': val[3],
+            }
+
+        self.data = dict(sorted(self.data.items(), key=lambda x: x[1]['code']))
+
+
+class Brates(Common):
+    def __init__(self, text):
+        super().__init__()
+        self.data = []
+        for row in text.splitlines():
+            val = row.split(';')
+            self.data.append({
+                'give_id': int(val[0]),
+                'get_id': int(val[1]),
+                'rate': float(val[2]),
+            })
+'''
+
+
+class Top(Common):
+    def __init__(self, text):
+        super().__init__()
+        self.data = []
+        for row in text.splitlines():
+            val = row.split(';')
+            self.data.append({
+                'give_id': int(val[0]),
+                'get_id': int(val[1]),
+                'perc': float(val[2]),
+            })
+
+        self.data = sorted(self.data, key=lambda x: x['perc'], reverse=True)
+
+
 class BestChange:
     __version = None
     __filename = 'info.zip'
@@ -135,11 +179,17 @@ class BestChange:
     __file_exchangers = 'bm_exch.dat'
     __file_rates = 'bm_rates.dat'
     __file_cities = 'bm_cities.dat'
+    __file_top = 'bm_top.dat'
+    # __file_bcodes = 'bm_bcodes.dat'
+    # __file_brates = 'bm_brates.dat'
 
     __currencies = None
     __exchangers = None
     __rates = None
     __cities = None
+    # __bcodes = None
+    # __brates = None
+    __top = None
 
     def __init__(self, load=True, cache=True, cache_seconds=15, cache_path='./', exchangers_reviews=False,
                  split_reviews=False):
@@ -193,7 +243,20 @@ class BestChange:
             if self.__file_cities in files:
                 text = TextIOWrapper(zipfile.open(self.__file_cities), encoding=self.__enc).read()
                 self.__cities = Cities(text)
+            '''
+            if self.__file_bcodes in files:
+                text = TextIOWrapper(zipfile.open(self.__file_bcodes), encoding=self.__enc).read()
+                self.__bcodes = Bcodes(text)
 
+            if self.__file_brates in files:
+                text = TextIOWrapper(zipfile.open(self.__file_brates), encoding=self.__enc).read()
+                self.__brates = Brates(text)
+            '''
+            if self.__file_top in files:
+                text = TextIOWrapper(zipfile.open(self.__file_top), encoding=self.__enc).read()
+                self.__top = Top(text)
+
+            # ...
             if self.__exchangers_reviews:
                 self.exchangers().extract_reviews(self.rates().get())
 
@@ -209,10 +272,28 @@ class BestChange:
     def cities(self):
         return self.__cities
 
+    '''
+    def bcodes(self):
+        return self.__bcodes
+
+    def brates(self):
+        return self.__brates
+    '''
+
+    def top(self):
+        return self.__top
+
 
 if __name__ == '__main__':
-    api = BestChange(cache_seconds=3600, exchangers_reviews=True, split_reviews=True)
+    api = BestChange(cache_seconds=1, exchangers_reviews=True, split_reviews=True)
 
+    currencies = api.currencies().get()
+    top = api.top().get()
+
+    for val in top:
+        print(currencies[val['give_id']]['name'], '->', currencies[val['get_id']]['name'], ':', round(val['perc'], 2))
+
+    exit()
     # print(api.exchangers().search_by_name('обмен'))
     # print(api.currencies().search_by_name('налич'))
     # exit()
