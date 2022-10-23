@@ -5,7 +5,7 @@ import os
 import platform
 import time
 from itertools import groupby
-
+import ssl
 
 def creation_date(path_to_file):
     """
@@ -172,7 +172,7 @@ class Top(Common):
 class BestChange:
     __version = None
     __filename = 'info.zip'
-    __url = 'http://api.bestchange.ru/info.zip'
+    __url = 'https://api.bestchange.ru/info.zip'
     __enc = 'windows-1251'
 
     __file_currencies = 'bm_cy.dat'
@@ -221,9 +221,11 @@ class BestChange:
                     and time.time() - creation_date(self.__cache_path) < self.__cache_seconds:
                 filename = self.__cache_path
             else:
+                ssl._create_default_https_context = ssl._create_unverified_context
                 filename, headers = urlretrieve(self.__url, self.__cache_path if self.__cache else None)
         except Exception as e:
             pass
+            raise e
         else:
             zipfile = ZipFile(filename)
             files = zipfile.namelist()
