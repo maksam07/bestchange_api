@@ -229,20 +229,24 @@ class BestChange:
             files = zipfile.namelist()
 
             if self.__file_rates in files:
-                text = TextIOWrapper(zipfile.open(self.__file_rates), encoding=self.__enc).read()
-                self.__rates = Rates(text, self.__split_reviews)
+                with zipfile.open(self.__file_rates) as f:
+                    with TextIOWrapper(f, encoding=self.__enc) as r:
+                        self.__rates = Rates(r.read(), self.__split_reviews)
 
             if self.__file_currencies in files:
-                text = TextIOWrapper(zipfile.open(self.__file_currencies), encoding=self.__enc).read()
-                self.__currencies = Currencies(text)
+                with zipfile.open(self.__file_currencies) as f:
+                    with TextIOWrapper(f, encoding=self.__enc) as r:
+                        self.__currencies = Currencies(r.read())
 
             if self.__file_exchangers in files:
-                text = TextIOWrapper(zipfile.open(self.__file_exchangers), encoding=self.__enc).read()
-                self.__exchangers = Exchangers(text)
+                with zipfile.open(self.__file_exchangers) as f:
+                    with TextIOWrapper(f, encoding=self.__enc) as r:
+                        self.__exchangers = Exchangers(r.read())
 
             if self.__file_cities in files:
-                text = TextIOWrapper(zipfile.open(self.__file_cities), encoding=self.__enc).read()
-                self.__cities = Cities(text)
+                with zipfile.open(self.__file_cities) as f:
+                    with TextIOWrapper(f, encoding=self.__enc) as r:
+                        self.__cities = Cities(r.read())
             '''
             if self.__file_bcodes in files:
                 text = TextIOWrapper(zipfile.open(self.__file_bcodes), encoding=self.__enc).read()
@@ -253,12 +257,17 @@ class BestChange:
                 self.__brates = Brates(text)
             '''
             if self.__file_top in files:
-                text = TextIOWrapper(zipfile.open(self.__file_top), encoding=self.__enc).read()
-                self.__top = Top(text)
+                with zipfile.open(self.__file_top) as f:
+                    with TextIOWrapper(f, encoding=self.__enc) as r:
+                        self.__top = Top(r.read())
 
             # ...
             if self.__exchangers_reviews:
                 self.exchangers().extract_reviews(self.rates().get())
+
+            zipfile.close()
+            if not self.__cache:
+                os.remove(filename)
 
     def rates(self):
         return self.__rates
@@ -285,7 +294,7 @@ class BestChange:
 
 
 if __name__ == '__main__':
-    api = BestChange(cache_seconds=1, exchangers_reviews=True, split_reviews=True)
+    api = BestChange(cache_seconds=10, exchangers_reviews=True, split_reviews=True)
 
     currencies = api.currencies().get()
     top = api.top().get()
