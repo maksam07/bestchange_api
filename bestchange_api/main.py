@@ -5,6 +5,7 @@ import os
 import platform
 import time
 from itertools import groupby
+import ssl
 
 
 def creation_date(path_to_file):
@@ -191,8 +192,15 @@ class BestChange:
     # __brates = None
     __top = None
 
-    def __init__(self, load=True, cache=True, cache_seconds=15, cache_path='./', exchangers_reviews=False,
-                 split_reviews=False):
+    def __init__(self,
+                 load=True,
+                 cache=True,
+                 cache_seconds=15,
+                 cache_path='./',
+                 exchangers_reviews=False,
+                 split_reviews=False,
+                 ssl=True
+                 ):
         """
         :param load: True (default). Загружать всю базу сразу
         :param cache: True (default). Использовать кеширование
@@ -206,12 +214,15 @@ class BestChange:
         :param split_reviews: False (default). По-умолчанию BestChange отдает отрицательные и положительные отзывы
         одним значением через точку. Так как направлений обмена и обменок огромное количество, то это значение
         по-умолчанию отключено, чтобы не вызывать лишнюю нагрузку
+        :param ssl: Использовать SSL соединение для загрузки данных
         """
+        self.__is_error = False
         self.__cache = cache
         self.__cache_seconds = cache_seconds
         self.__cache_path = cache_path + self.__filename
         self.__exchangers_reviews = exchangers_reviews
         self.__split_reviews = split_reviews
+        self.__ssl = ssl
         if load:
             self.load()
 
@@ -221,32 +232,46 @@ class BestChange:
                     and time.time() - creation_date(self.__cache_path) < self.__cache_seconds:
                 filename = self.__cache_path
             else:
+                if self.__ssl:
+                    # Отключаем проверку сертификата, так как BC его не выпустил для этой страницы
+                    ssl._create_default_https_context = ssl._create_unverified_context
+                    self.__url = self.__url.replace('http', 'https')
+
                 filename, headers = urlretrieve(self.__url, self.__cache_path if self.__cache else None)
-        except Exception as e:
-            pass
-        else:
+
             zipfile = ZipFile(filename)
             files = zipfile.namelist()
 
-            if self.__file_rates in files:
-                with zipfile.open(self.__file_rates) as f:
-                    with TextIOWrapper(f, encoding=self.__enc) as r:
-                        self.__rates = Rates(r.read(), self.__split_reviews)
+            if self.__file_rates not in files:
+                raise Exception('File "{}" not found'.format(self.__file_rates))
 
-            if self.__file_currencies in files:
-                with zipfile.open(self.__file_currencies) as f:
-                    with TextIOWrapper(f, encoding=self.__enc) as r:
-                        self.__currencies = Currencies(r.read())
+            if self.__file_currencies not in files:
+                raise Exception('File "{}" not found'.format(self.__file_currencies))
 
-            if self.__file_exchangers in files:
-                with zipfile.open(self.__file_exchangers) as f:
-                    with TextIOWrapper(f, encoding=self.__enc) as r:
-                        self.__exchangers = Exchangers(r.read())
+            if self.__file_exchangers not in files:
+                raise Exception('File "{}" not found'.format(self.__file_exchangers))
 
-            if self.__file_cities in files:
-                with zipfile.open(self.__file_cities) as f:
-                    with TextIOWrapper(f, encoding=self.__enc) as r:
-                        self.__cities = Cities(r.read())
+            if self.__file_cities not in files:
+                raise Exception('File "{}" not found'.format(self.__file_cities))
+
+            if self.__file_top not in files:
+                raise Exception('File "{}" not found'.format(self.__file_top))
+
+            with zipfile.open(self.__file_rates) as f:
+                with TextIOWrapper(f, encoding=self.__enc) as r:
+                    self.__rates = Rates(r.read(), self.__split_reviews)
+
+            with zipfile.open(self.__file_currencies) as f:
+                with TextIOWrapper(f, encoding=self.__enc) as r:
+                    self.__currencies = Currencies(r.read())
+
+            with zipfile.open(self.__file_exchangers) as f:
+                with TextIOWrapper(f, encoding=self.__enc) as r:
+                    self.__exchangers = Exchangers(r.read())
+
+            with zipfile.open(self.__file_cities) as f:
+                with TextIOWrapper(f, encoding=self.__enc) as r:
+                    self.__cities = Cities(r.read())
             '''
             if self.__file_bcodes in files:
                 text = TextIOWrapper(zipfile.open(self.__file_bcodes), encoding=self.__enc).read()
@@ -256,18 +281,24 @@ class BestChange:
                 text = TextIOWrapper(zipfile.open(self.__file_brates), encoding=self.__enc).read()
                 self.__brates = Brates(text)
             '''
-            if self.__file_top in files:
-                with zipfile.open(self.__file_top) as f:
-                    with TextIOWrapper(f, encoding=self.__enc) as r:
-                        self.__top = Top(r.read())
+            with zipfile.open(self.__file_top) as f:
+                with TextIOWrapper(f, encoding=self.__enc) as r:
+                    self.__top = Top(r.read())
 
             # ...
             if self.__exchangers_reviews:
                 self.exchangers().extract_reviews(self.rates().get())
 
             zipfile.close()
+
             if not self.__cache:
                 os.remove(filename)
+
+        except Exception as e:
+            self.__is_error = str(e)
+
+    def is_error(self):
+        return self.__is_error
 
     def rates(self):
         return self.__rates
@@ -294,7 +325,8 @@ class BestChange:
 
 
 if __name__ == '__main__':
-    api = BestChange(cache_seconds=10, exchangers_reviews=True, split_reviews=True)
+    api = BestChange(cache_seconds=1, exchangers_reviews=True, split_reviews=True, ssl=True)
+    print(api.is_error())
 
     currencies = api.currencies().get()
     top = api.top().get()
