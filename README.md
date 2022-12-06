@@ -47,6 +47,8 @@ api = BestChange(exchangers_reviews=True)
 from bestchange_api import BestChange
 
 api = BestChange(cache=True, cache_seconds=300, cache_path='/home/user/tmp/')
+api.is_error()  # Возвращает False, если данные успешно загружены, иначе текст ошибки
+
 api.currencies().get()  # Получить список всех валют
 api.currencies().get_by_id(1)  # Получить название или словарь определенной валюты
 api.currencies().search_by_name('text')  # Поиск валют по подстроке
