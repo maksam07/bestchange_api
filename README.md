@@ -68,3 +68,12 @@ currencies = api.currencies().get()
 for val in api.top().get():
     print(currencies[val['give_id']]['name'], '->', currencies[val['get_id']]['name'], ':', round(val['perc'], 2))
 ```
+
+Работа с прокси:
+
+```python
+from bestchange_api import BestChange
+
+proxy = {'http': '127.0.0.1', 'https': '127.0.0.1'}
+api = BestChange(proxy=proxy)
+```
