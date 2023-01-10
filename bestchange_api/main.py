@@ -1,6 +1,6 @@
 from io import TextIOWrapper
 from zipfile import ZipFile
-from urllib.request import urlretrieve
+from urllib.request import urlretrieve, ProxyHandler, build_opener, install_opener
 import os
 import platform
 import time
@@ -199,7 +199,8 @@ class BestChange:
                  cache_path='./',
                  exchangers_reviews=False,
                  split_reviews=False,
-                 ssl=True
+                 ssl=True,
+                 proxy=None
                  ):
         """
         :param load: True (default). Загружать всю базу сразу
@@ -209,12 +210,13 @@ class BestChange:
         В поддержке писали, что загружать архив можно не чаще раз в 30 секунд, но я не обнаружил никаких проблем,
         если загружать его чаще
         :param cache_path: './' (default). Папка хранения кешированных данных (zip-архива)
-        :param exchangers_reviews: False (default). Добавить в информация о обменниках количество отзывов. Работает
+        :param exchangers_reviews: False (default). Добавить в информацию об обменниках количество отзывов. Работает
         только с включенными обменниками и у которых минимум одно направление на BestChange.
         :param split_reviews: False (default). По-умолчанию BestChange отдает отрицательные и положительные отзывы
-        одним значением через точку. Так как направлений обмена и обменок огромное количество, то это значение
+        одним значением через точку. Так как направлений обмена и обменников огромное количество, то это значение
         по-умолчанию отключено, чтобы не вызывать лишнюю нагрузку
         :param ssl: Использовать SSL соединение для загрузки данных
+        :param proxy: Использовать прокси. Пример: {'http': '127.0.0.1', 'https': '127.0.0.1'}
         """
         self.__is_error = False
         self.__cache = cache
@@ -223,6 +225,7 @@ class BestChange:
         self.__exchangers_reviews = exchangers_reviews
         self.__split_reviews = split_reviews
         self.__ssl = ssl
+        self.__proxy = proxy
         if load:
             self.load()
 
@@ -236,6 +239,11 @@ class BestChange:
                     # Отключаем проверку сертификата, так как BC его не выпустил для этой страницы
                     ssl._create_default_https_context = ssl._create_unverified_context
                     self.__url = self.__url.replace('http', 'https')
+
+                if self.__proxy is not None:
+                    proxy = ProxyHandler(self.__proxy)
+                    opener = build_opener(proxy)
+                    install_opener(opener)
 
                 filename, headers = urlretrieve(self.__url, self.__cache_path if self.__cache else None)
 
@@ -325,7 +333,8 @@ class BestChange:
 
 
 if __name__ == '__main__':
-    api = BestChange(cache_seconds=1, exchangers_reviews=True, split_reviews=True, ssl=True)
+    proxy = None  # {'http': '127.0.0.1', 'https': '127.0.0.1'}
+    api = BestChange(cache_seconds=1, exchangers_reviews=True, split_reviews=True, ssl=True, proxy=proxy)
     print(api.is_error())
 
     currencies = api.currencies().get()
