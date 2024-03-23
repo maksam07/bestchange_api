@@ -1,19 +1,13 @@
 from io import TextIOWrapper
 from zipfile import ZipFile
-from urllib.request import urlretrieve, ProxyHandler, build_opener, install_opener
+import httpx
 import os
 import platform
 import time
 from itertools import groupby
-import ssl
 
 
 def creation_date(path_to_file):
-    """
-    Try to get the date that a file was created, falling back to when it was
-    last modified if that isn't possible.
-    See http://stackoverflow.com/a/39501288/1709587 for explanation.
-    """
     if platform.system() == 'Windows':
         return os.path.getctime(path_to_file)
     else:
@@ -21,8 +15,6 @@ def creation_date(path_to_file):
         try:
             return stat.st_birthtime
         except AttributeError:
-            # We're probably on Linux. No easy way to get creation dates here,
-            # so we'll settle for when its content was last modified.
             return stat.st_mtime
 
 
@@ -44,20 +36,16 @@ class Rates:
                     'city_id': int(val[10]),
                 })
             except ZeroDivisionError:
-                # Иногда бывает курс N:0 и появляется ошибка деления на 0.
                 pass
 
     def get(self):
         return self.__data
 
     def filter(self, give_id, get_id):
-        data = []
-        for val in self.__data:
-            if val['give_id'] == give_id and val['get_id'] == get_id:
-                val['give'] = 1 if val['rate'] < 1 else val['rate']
-                val['get'] = 1 / val['rate'] if val['rate'] < 1 else 1
-                data.append(val)
-
+        data = [val for val in self.__data if val['give_id'] == give_id and val['get_id'] == get_id]
+        for val in data:
+            val['give'] = 1 if val['rate'] < 1 else val['rate']
+            val['get'] = 1 / val['rate'] if val['rate'] < 1 else 1
         return sorted(data, key=lambda x: x['rate'])
 
 
@@ -69,13 +57,10 @@ class Common:
         return self.data
 
     def get_by_id(self, id, only_name=True):
-        if id not in self.data:
-            return False
-
-        return self.data[id]['name'] if only_name else self.data[id]
+        return self.data[id]['name'] if only_name and id in self.data else self.data.get(id)
 
     def search_by_name(self, name):
-        return {k: val for k, val in self.data.items() if val['name'].lower().count(name.lower())}
+        return {k: v for k, v in self.data.items() if name.lower() in v['name'].lower()}
 
 
 class Currencies(Common):
@@ -83,12 +68,7 @@ class Currencies(Common):
         super().__init__()
         for row in text.splitlines():
             val = row.split(';')
-            self.data[int(val[0])] = {
-                'id': int(val[0]),
-                'pos_id': int(val[1]),
-                'name': val[2],
-            }
-
+            self.data[int(val[0])] = {'id': int(val[0]), 'pos_id': int(val[1]), 'name': val[2]}
         self.data = dict(sorted(self.data.items(), key=lambda x: x[1]['name']))
 
 
@@ -97,19 +77,14 @@ class Exchangers(Common):
         super().__init__()
         for row in text.splitlines():
             val = row.split(';')
-            self.data[int(val[0])] = {
-                'id': int(val[0]),
-                'name': val[1],
-                'wmbl': int(val[3]),
-                'reserve_sum': float(val[4]),
-            }
-
+            self.data[int(val[0])] = {'id': int(val[0]), 'name': val[1], 'wmbl': int(val[3]),
+                                      'reserve_sum': float(val[4])}
         self.data = dict(sorted(self.data.items()))
 
     def extract_reviews(self, rates):
         for k, v in groupby(sorted(rates, key=lambda x: x['exchange_id']), lambda x: x['exchange_id']):
-            if k in self.data.keys():
-                self.data[k]['reviews'] = list(v)[0]['reviews']
+            if k in self.data:
+                self.data[k]['reviews'] = next(v)['reviews']
 
 
 class Cities(Common):
@@ -117,61 +92,19 @@ class Cities(Common):
         super().__init__()
         for row in text.splitlines():
             val = row.split(';')
-            self.data[int(val[0])] = {
-                'id': int(val[0]),
-                'name': val[1],
-            }
-
+            self.data[int(val[0])] = {'id': int(val[0]), 'name': val[1]}
         self.data = dict(sorted(self.data.items(), key=lambda x: x[1]['name']))
-
-
-'''
-class Bcodes(Common):
-    def __init__(self, text):
-        super().__init__()
-        for row in text.splitlines():
-            val = row.split(';')
-            self.data[int(val[0])] = {
-                'id': int(val[0]),
-                'code': val[1],
-                'name': val[2],
-                'source': val[3],
-            }
-
-        self.data = dict(sorted(self.data.items(), key=lambda x: x[1]['code']))
-
-
-class Brates(Common):
-    def __init__(self, text):
-        super().__init__()
-        self.data = []
-        for row in text.splitlines():
-            val = row.split(';')
-            self.data.append({
-                'give_id': int(val[0]),
-                'get_id': int(val[1]),
-                'rate': float(val[2]),
-            })
-'''
 
 
 class Top(Common):
     def __init__(self, text):
         super().__init__()
-        self.data = []
-        for row in text.splitlines():
-            val = row.split(';')
-            self.data.append({
-                'give_id': int(val[0]),
-                'get_id': int(val[1]),
-                'perc': float(val[2]),
-            })
-
+        self.data = [dict(zip(['give_id', 'get_id', 'perc'], map(float, row.split(';')))) for row in text.splitlines()]
         self.data = sorted(self.data, key=lambda x: x['perc'], reverse=True)
 
 
 class BestChange:
-    __version = None
+    __version = '1.0'
     __filename = 'info.zip'
     __url = 'http://api.bestchange.ru/info.zip'
     __enc = 'windows-1251'
@@ -181,126 +114,46 @@ class BestChange:
     __file_rates = 'bm_rates.dat'
     __file_cities = 'bm_cities.dat'
     __file_top = 'bm_top.dat'
-    # __file_bcodes = 'bm_bcodes.dat'
-    # __file_brates = 'bm_brates.dat'
 
-    __currencies = None
-    __exchangers = None
-    __rates = None
-    __cities = None
-    # __bcodes = None
-    # __brates = None
-    __top = None
-
-    def __init__(self,
-                 load=True,
-                 cache=True,
-                 cache_seconds=15,
-                 cache_path='./',
-                 exchangers_reviews=False,
-                 split_reviews=False,
-                 ssl=True,
-                 proxy=None
-                 ):
-        """
-        :param load: True (default). Загружать всю базу сразу
-        :param cache: True (default). Использовать кеширование
-            (в связи с тем, что сервис отдает данные, в среднем, 15 секунд)
-        :param cache_seconds: 15 (default). Сколько времени хранятся кешированные данные.
-        В поддержке писали, что загружать архив можно не чаще раз в 30 секунд, но я не обнаружил никаких проблем,
-        если загружать его чаще
-        :param cache_path: './' (default). Папка хранения кешированных данных (zip-архива)
-        :param exchangers_reviews: False (default). Добавить в информацию об обменниках количество отзывов. Работает
-        только с включенными обменниками и у которых минимум одно направление на BestChange.
-        :param split_reviews: False (default). По-умолчанию BestChange отдает отрицательные и положительные отзывы
-        одним значением через точку. Так как направлений обмена и обменников огромное количество, то это значение
-        по-умолчанию отключено, чтобы не вызывать лишнюю нагрузку
-        :param ssl: Использовать SSL соединение для загрузки данных
-        :param proxy: Использовать прокси. Пример: {'http': '127.0.0.1', 'https': '127.0.0.1'}
-        """
+    def __init__(self, load=True, cache=True, cache_seconds=15, cache_path='./', exchangers_reviews=False,
+                 split_reviews=False):
         self.__is_error = False
         self.__cache = cache
         self.__cache_seconds = cache_seconds
         self.__cache_path = cache_path + self.__filename
         self.__exchangers_reviews = exchangers_reviews
         self.__split_reviews = split_reviews
-        self.__ssl = ssl
-        self.__proxy = proxy
         if load:
             self.load()
 
     def load(self):
         try:
-            if os.path.isfile(self.__cache_path) \
-                    and time.time() - creation_date(self.__cache_path) < self.__cache_seconds:
-                filename = self.__cache_path
-            else:
-                if self.__ssl:
-                    # Отключаем проверку сертификата, так как BC его не выпустил для этой страницы
-                    ssl._create_default_https_context = ssl._create_unverified_context
-                    self.__url = self.__url.replace('http', 'https')
+            if not (
+                    os.path.isfile(self.__cache_path) and
+                    time.time() - creation_date(self.__cache_path) < self.__cache_seconds
+            ):
+                with httpx.Client() as client:
+                    r = client.get(self.__url)
+                    if r.status_code == 200:
+                        with open(self.__cache_path, 'wb') as f:
+                            f.write(r.content)
+                    else:
+                        raise Exception("Failed to download file")
 
-                if self.__proxy is not None:
-                    proxy = ProxyHandler(self.__proxy)
-                    opener = build_opener(proxy)
-                    install_opener(opener)
-
-                filename, headers = urlretrieve(self.__url, self.__cache_path if self.__cache else None)
-
-            zipfile = ZipFile(filename)
-            files = zipfile.namelist()
-
-            if self.__file_rates not in files:
-                raise Exception('File "{}" not found'.format(self.__file_rates))
-
-            if self.__file_currencies not in files:
-                raise Exception('File "{}" not found'.format(self.__file_currencies))
-
-            if self.__file_exchangers not in files:
-                raise Exception('File "{}" not found'.format(self.__file_exchangers))
-
-            if self.__file_cities not in files:
-                raise Exception('File "{}" not found'.format(self.__file_cities))
-
-            if self.__file_top not in files:
-                raise Exception('File "{}" not found'.format(self.__file_top))
-
-            with zipfile.open(self.__file_rates) as f:
-                with TextIOWrapper(f, encoding=self.__enc) as r:
+            with ZipFile(self.__cache_path) as zipfile:
+                with zipfile.open(self.__file_rates) as f, TextIOWrapper(f, encoding=self.__enc) as r:
                     self.__rates = Rates(r.read(), self.__split_reviews)
-
-            with zipfile.open(self.__file_currencies) as f:
-                with TextIOWrapper(f, encoding=self.__enc) as r:
+                with zipfile.open(self.__file_currencies) as f, TextIOWrapper(f, encoding=self.__enc) as r:
                     self.__currencies = Currencies(r.read())
-
-            with zipfile.open(self.__file_exchangers) as f:
-                with TextIOWrapper(f, encoding=self.__enc) as r:
+                with zipfile.open(self.__file_exchangers) as f, TextIOWrapper(f, encoding=self.__enc) as r:
                     self.__exchangers = Exchangers(r.read())
-
-            with zipfile.open(self.__file_cities) as f:
-                with TextIOWrapper(f, encoding=self.__enc) as r:
+                with zipfile.open(self.__file_cities) as f, TextIOWrapper(f, encoding=self.__enc) as r:
                     self.__cities = Cities(r.read())
-            '''
-            if self.__file_bcodes in files:
-                text = TextIOWrapper(zipfile.open(self.__file_bcodes), encoding=self.__enc).read()
-                self.__bcodes = Bcodes(text)
-
-            if self.__file_brates in files:
-                text = TextIOWrapper(zipfile.open(self.__file_brates), encoding=self.__enc).read()
-                self.__brates = Brates(text)
-            '''
-            with zipfile.open(self.__file_top) as f:
-                with TextIOWrapper(f, encoding=self.__enc) as r:
+                with zipfile.open(self.__file_top) as f, TextIOWrapper(f, encoding=self.__enc) as r:
                     self.__top = Top(r.read())
 
-            # ...
             if self.__exchangers_reviews:
-                self.exchangers().extract_reviews(self.rates().get())
-
-            zipfile.close()
-
-            if not self.__cache:
-                os.remove(filename)
+                self.__exchangers.extract_reviews(self.__rates.get())
 
         except Exception as e:
             self.__is_error = str(e)
@@ -320,40 +173,28 @@ class BestChange:
     def cities(self):
         return self.__cities
 
-    '''
-    def bcodes(self):
-        return self.__bcodes
-
-    def brates(self):
-        return self.__brates
-    '''
-
     def top(self):
         return self.__top
 
 
 if __name__ == '__main__':
-    proxy = None  # {'http': '127.0.0.1', 'https': '127.0.0.1'}
-    api = BestChange(cache_seconds=1, exchangers_reviews=True, split_reviews=True, ssl=True, proxy=proxy)
-    print(api.is_error())
+    api = BestChange(load=True, cache=True, cache_seconds=3600, exchangers_reviews=True, split_reviews=True)
+    if api.is_error():
+        print("Error:", api.is_error())
+    else:
+        print("Data loaded successfully.")
 
-    currencies = api.currencies().get()
-    top = api.top().get()
+        # Пример вывода топовых направлений обмена
+        top = api.top().get()
+        currencies = api.currencies().get()
+        for val in top[:5]:  # выводим первые 5 направлений
+            give_currency_name = currencies[val['give_id']]['name']
+            get_currency_name = currencies[val['get_id']]['name']
+            print(f"{give_currency_name} -> {get_currency_name} with percentage {val['perc']}%")
 
-    for val in top:
-        print(currencies[val['give_id']]['name'], '->', currencies[val['get_id']]['name'], ':', round(val['perc'], 2))
-
-    exit()
-    # print(api.exchangers().search_by_name('обмен'))
-    # print(api.currencies().search_by_name('налич'))
-    # exit()
-    currencies = api.currencies().get()
-    exchangers = api.exchangers().get()
-
-    dir_from = 93
-    dir_to = 42
-    rows = api.rates().filter(dir_from, dir_to)
-    title = 'Exchange rates in the direction (https://www.bestchange.ru/index.php?from={}&to={}) {} : {}'
-    print(title.format(dir_from, dir_to, api.currencies().get_by_id(dir_from), api.currencies().get_by_id(dir_to)))
-    for val in rows[:3]:
-        print('{} {}'.format(exchangers[val['exchange_id']]['name'], val))
+        # Дополнительно: пример фильтрации обменных курсов
+        dir_from, dir_to = 93, 42  # Примерные ID валют для обмена
+        rates_filtered = api.rates().filter(dir_from, dir_to)
+        print(f"Exchange rates from {currencies[dir_from]['name']} to {currencies[dir_to]['name']}:")
+        for rate in rates_filtered[:3]:  # Показать топ 3 курса обмена
+            print(f"Exchange ID: {rate['exchange_id']}, Rate: {rate['rate']}, Reserve: {rate['reserve']}")
